@@ -1,6 +1,7 @@
 'use client';
 
-import { useAddLiquidity, tickToPrice } from '@/hooks/useAddLiquidity';
+import { useAddLiquidity } from '@/hooks/useAddLiquidity';
+import { getRangeSides } from '@/lib/range-sides';
 import { usePoolTicks } from '@/hooks/usePoolTicks';
 import { useWalletContext } from '@/context/WalletContext';
 import { PoolSelector } from './PoolSelector';
@@ -41,12 +42,10 @@ export function AddLiquidity() {
   const token0Symbol = pool?.token0Symbol ?? pool?.token0 ?? 'Token A';
   const token1Symbol = pool?.token1Symbol ?? pool?.token1 ?? 'Token B';
 
-  // When price is below range, only token0 needed; above range, only token1
+  // Derive single-sided flags via a pure, guarded helper.
+  // A zero/undefined/non-finite currentPrice must NOT lock either input.
   const currentPrice = pool?.currentPrice ?? 0;
-  const lp = tickToPrice(lowerTick);
-  const up = tickToPrice(upperTick);
-  const token0Only = currentPrice < lp;
-  const token1Only = currentPrice > up;
+  const { token0Only, token1Only } = getRangeSides({ currentPrice, lowerTick, upperTick });
 
   async function handleSubmit() {
     if (!address || !signTransaction) return;

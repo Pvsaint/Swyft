@@ -24,35 +24,68 @@ import path from 'path';
  *  - object-src  'none'       — Disallow Flash and similar plugins.
  *  - base-uri    'self'       — Prevent base-tag injection.
  */
-function originOf(value: string | undefined, fallback: string): string {
+
+/**
+ * Returns the origin for http/https URLs using the WHATWG URL standard.
+ * For ws/wss URLs, `.origin` returns the string `'null'` in Node/browsers
+ * because ws: and wss: are not "special" schemes — so we rebuild the origin
+ * manually from protocol + hostname + port.
+ */
+export function originOf(value: string | undefined, fallback: string): string {
+  const raw = value || fallback;
   try {
-    return new URL(value || fallback).origin;
+    const url = new URL(raw);
+    // ws: and wss: are not special schemes, so url.origin === 'null'.
+    // Rebuild the origin explicitly for WebSocket URLs.
+    if (url.protocol === 'ws:' || url.protocol === 'wss:') {
+      const port = url.port ? `:${url.port}` : '';
+      return `${url.protocol}//${url.hostname}${port}`;
+    }
+    return url.origin;
   } catch {
-    return new URL(fallback).origin;
+    try {
+      const url = new URL(fallback);
+      if (url.protocol === 'ws:' || url.protocol === 'wss:') {
+        const port = url.port ? `:${url.port}` : '';
+        return `${url.protocol}//${url.hostname}${port}`;
+      }
+      return url.origin;
+    } catch {
+      return fallback;
+    }
   }
 }
 
-const connectSrc = [
-  "'self'",
-  originOf(
-    process.env.NEXT_PUBLIC_SOROBAN_RPC_URL,
-    'https://soroban-testnet.stellar.org',
-  ),
-  originOf(
-    process.env.NEXT_PUBLIC_HORIZON_URL,
-    'https://horizon-testnet.stellar.org',
-  ),
-  originOf(process.env.NEXT_PUBLIC_API_URL, 'http://localhost:3001'),
-  originOf(process.env.NEXT_PUBLIC_WS_URL, 'ws://localhost:3001'),
-  ...[
-    process.env.NEXT_PUBLIC_API_URL_TESTNET,
-    process.env.NEXT_PUBLIC_API_URL_PUBLIC,
-  ]
-    .filter(Boolean)
-    .map((value) => originOf(value, 'http://localhost:3001')),
-].filter((value, index, values) => values.indexOf(value) === index);
+export function buildConnectSrc(env: {
+  NEXT_PUBLIC_SOROBAN_RPC_URL?: string;
+  NEXT_PUBLIC_HORIZON_URL?: string;
+  NEXT_PUBLIC_API_URL?: string;
+  NEXT_PUBLIC_WS_URL?: string;
+  NEXT_PUBLIC_API_URL_TESTNET?: string;
+  NEXT_PUBLIC_API_URL_PUBLIC?: string;
+}): string[] {
+  return [
+    "'self'",
+    originOf(env.NEXT_PUBLIC_SOROBAN_RPC_URL, 'https://soroban-testnet.stellar.org'),
+    originOf(env.NEXT_PUBLIC_HORIZON_URL, 'https://horizon-testnet.stellar.org'),
+    originOf(env.NEXT_PUBLIC_API_URL, 'http://localhost:3001'),
+    originOf(env.NEXT_PUBLIC_WS_URL, 'ws://localhost:3001'),
+    ...[env.NEXT_PUBLIC_API_URL_TESTNET, env.NEXT_PUBLIC_API_URL_PUBLIC]
+      .filter(Boolean)
+      .map((value) => originOf(value, 'http://localhost:3001')),
+  ].filter((value, index, values) => values.indexOf(value) === index);
+}
 
-const ContentSecurityPolicy = [
+const connectSrc = buildConnectSrc({
+  NEXT_PUBLIC_SOROBAN_RPC_URL: process.env.NEXT_PUBLIC_SOROBAN_RPC_URL,
+  NEXT_PUBLIC_HORIZON_URL: process.env.NEXT_PUBLIC_HORIZON_URL,
+  NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
+  NEXT_PUBLIC_WS_URL: process.env.NEXT_PUBLIC_WS_URL,
+  NEXT_PUBLIC_API_URL_TESTNET: process.env.NEXT_PUBLIC_API_URL_TESTNET,
+  NEXT_PUBLIC_API_URL_PUBLIC: process.env.NEXT_PUBLIC_API_URL_PUBLIC,
+});
+
+export const ContentSecurityPolicy = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
